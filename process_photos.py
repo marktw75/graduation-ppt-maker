@@ -18,9 +18,9 @@ def process_photos(input_dir, output_dir):
     
     processed_images = []
     
-    for i, image_path in enumerate(image_files):
+    for image_path in image_files:
         try:
-            print(f"\n處理照片 {i+1}/{len(image_files)}: {image_path}")
+            print(f"\n處理照片: {image_path}")
             
             # 檢查原始檔案是否存在
             if not os.path.exists(image_path):
@@ -42,17 +42,33 @@ def process_photos(input_dir, output_dir):
                             img = img.rotate(90, expand=True)
                             print("已旋轉照片 90 度")
                 
-                # 計算新的尺寸（最大寬度或高度為 1280 像素）
-                max_size = 1280
-                ratio = min(max_size / img.width, max_size / img.height)
-                new_size = (int(img.width * ratio), int(img.height * ratio))
+                # 計算縮放比例（以較長邊為基準）
+                max_size = 1080  # 設定最大邊長
+                ratio = max_size / max(img.width, img.height)
+                new_width = int(img.width * ratio)
+                new_height = int(img.height * ratio)
                 
-                # 調整大小
-                img = img.resize(new_size, Image.LANCZOS)
-                print(f"調整後尺寸：{new_size}")
+                # 調整大小（保持原始長寬比）
+                img = img.resize((new_width, new_height), Image.LANCZOS)
+                
+                # 建立一個新的 1920x1080 的黑色背景
+                background = Image.new('RGB', (1920, 1080), (0, 0, 0))
+                
+                # 計算置中位置
+                paste_x = (1920 - new_width) // 2
+                paste_y = (1080 - new_height) // 2
+                
+                # 將調整後的照片貼到背景上
+                background.paste(img, (paste_x, paste_y))
+                img = background
+                
+                print(f"調整後尺寸：{img.size}")
+                
+                # 取得原始檔名
+                original_filename = os.path.basename(image_path)
                 
                 # 儲存處理後的照片（使用較低的品質）
-                output_path = os.path.join(processed_dir, f"photo_{i+1}.jpg")
+                output_path = os.path.join(processed_dir, original_filename)
                 img.save(output_path, quality=60, optimize=True)
                 print(f"已儲存處理後的照片：{output_path}")
                 
