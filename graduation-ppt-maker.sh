@@ -183,20 +183,22 @@ generate_video() {
     # 讀取文字內容
     local texts=()
     while IFS= read -r line; do
-        # 跳過真正的註解行（以 # 開頭且後面跟著空格或 = 的行）
-        if [[ "$line" =~ ^#[[:space:]] ]] || [[ "$line" =~ ^#= ]]; then
+        # 跳過註解行
+        if [[ "$line" =~ ^# ]]; then
             continue
         fi
-        # 處理照片列表行（以數字開頭的行）
-        if [[ "$line" =~ ^[[:space:]]*[0-9]+\. ]]; then
+        # 處理照片列表行（包含等號的行）
+        if [[ "$line" =~ = ]]; then
             # 提取等號後面的文字
-            if [[ "$line" =~ =[[:space:]]*(.*)$ ]]; then
-                texts+=("${BASH_REMATCH[1]}")
-            else
-                texts+=("")
-            fi
+            text=$(echo "$line" | sed -E 's/^[^=]*=[[:space:]]*(.*)$/\1/')
+            texts+=("$text")
         fi
     done < "$text_file"
+    
+    echo -e "${GREEN}讀取到的文字數量：${#texts[@]}${NC}"
+    for i in "${!texts[@]}"; do
+        echo -e "${GREEN}文字 $((i+1)): ${texts[$i]}${NC}"
+    done
     
     # 計算每張照片的顯示時間
     local music_duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$music_file")
@@ -248,8 +250,19 @@ generate_video() {
         # 使用 ffmpeg 建立帶有過渡效果和文字的影片片段
         if [ -n "$text" ]; then
             # 有文字的情況
+            # 取得照片寬度
+            width=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of default=noprint_wrappers=1:nokey=1 "$photo")
+            # 根據寬度計算字體大小（1920寬度用48，其他按比例縮放）
+            fontsize=$((width * 48 / 1920))
+            # 確保字體大小在合理範圍內
+            if [ $fontsize -lt 24 ]; then
+                fontsize=24
+            elif [ $fontsize -gt 72 ]; then
+                fontsize=72
+            fi
+            
             ffmpeg -loop 1 -i "$photo" \
-                -vf "drawtext=text='$text':fontcolor=white:fontsize=24:box=1:boxcolor=black@0.5:boxborderw=5:x=(w-text_w)/2:y=h-th-10" \
+                -vf "drawtext=text='$text':fontcolor=white:fontsize=$fontsize:box=1:boxcolor=black@0.7:boxborderw=10:x=(w-text_w)/2:y=h-th-50" \
                 -c:v libx264 -t "$duration" -pix_fmt yuv420p "$output"
         else
             # 沒有文字的情況
