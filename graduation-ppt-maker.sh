@@ -48,16 +48,16 @@ EOF
         for photo in input/photos/*.jpg; do
             photo_count=$((photo_count + 1))
             photo_name=$(basename "$photo")
-            printf " %03d. %-30s = \n" "$photo_count" "$photo_name" >> input/init.txt
+            printf "%-40s = \n" "$photo_name" >> input/init.txt
         done
         
         # 加入照片統計資訊
-        echo -e "\n# ============================================" >> input/init.txt
-        echo "# 照片統計：共 $photo_count 張照片" >> input/init.txt
-        echo "# 第一張照片顯示 5 秒" >> input/init.txt
-        echo "# 最後一張照片顯示 15 秒" >> input/init.txt
-        echo "# 中間照片平均分配剩餘時間" >> input/init.txt
-        echo "# ============================================" >> input/init.txt
+        echo "" >> input/init.txt
+        echo "# 照片統計" >> input/init.txt
+        echo "# 總照片數：$photo_count" >> input/init.txt
+        echo "# 第一張照片顯示時間：5 秒" >> input/init.txt
+        echo "# 最後一張照片顯示時間：10 秒" >> input/init.txt
+        echo "# 中間照片平均顯示時間：根據音樂長度自動計算" >> input/init.txt
         
         echo -e "${GREEN}已建立文字範本，包含 ${YELLOW}$photo_count${GREEN} 張照片${NC}"
     else
@@ -200,8 +200,8 @@ generate_video() {
     
     # 計算每張照片的顯示時間
     local music_duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$music_file")
-    local first_duration=5  # 第一張照片顯示 5 秒
-    local last_duration=15  # 最後一張照片顯示 15 秒
+    local first_duration=10  # 第一張照片顯示 10 秒
+    local last_duration=10   # 最後一張照片顯示 10 秒
     local middle_duration=$(echo "scale=2; ($music_duration - $first_duration - $last_duration) / ($photo_count - 2)" | bc)
     
     echo -e "${GREEN}音樂長度：${music_duration} 秒${NC}"
