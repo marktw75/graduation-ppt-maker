@@ -6,9 +6,26 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# 檢查必要的命令
+for cmd in ffmpeg ffprobe convert; do
+    if ! command -v $cmd &> /dev/null; then
+        echo -e "${RED}錯誤：找不到 $cmd 命令${NC}"
+        echo -e "${YELLOW}請安裝必要的套件：${NC}"
+        echo -e "${YELLOW}  sudo apt-get update${NC}"
+        echo -e "${YELLOW}  sudo apt-get install -y ffmpeg imagemagick${NC}"
+        exit 1
+    fi
+done
+
+# 檢查Python環境
+if ! command -v python3 &> /dev/null; then
+    echo -e "${RED}錯誤：找不到 python3 命令${NC}"
+    exit 1
+fi
+
 # 顯示幫助訊息
 show_help() {
-    echo -e "${YELLOW}畢業紀念冊幻燈片製作工具${NC}"
+    echo -e "${GREEN}畢業紀念冊幻燈片製作工具${NC}"
     echo "用法: $0 [命令]"
     echo
     echo "可用命令:"
@@ -24,6 +41,7 @@ create_input_folder() {
     
     # 建立必要的目錄
     mkdir -p input/photos
+    mkdir -p input/music
     
     # 建立文字範本
     cat > input/init.txt << 'EOF'
@@ -41,13 +59,60 @@ EOF
     
     # 檢查是否有照片檔案
     if [ -d "input/photos" ] && [ -n "$(ls -A input/photos/*.jpg 2>/dev/null)" ]; then
-        # 列出所有照片檔案
+        # 初始化變數
         local photo_count=0
+        local photos=()
+        declare -A timing_map
+        local fixed_time=0
+        local count_fixed=0
+        
+        # 讀取 timing.txt（如果存在）
+        if [ -f "input/timing.txt" ]; then
+            while IFS='=' read -r filename duration; do
+                filename=$(echo "$filename" | xargs)
+                duration=$(echo "$duration" | xargs)
+                if [[ -n "$filename" && -n "$duration" ]]; then
+                    timing_map["$filename"]=$duration
+                fi
+            done < "input/timing.txt"
+        fi
+        
+        # 收集照片資訊
         for photo in input/photos/*.jpg; do
-            photo_count=$((photo_count + 1))
+            photos+=("$photo")
             photo_name=$(basename "$photo")
+            if [ -n "${timing_map[$photo_name]}" ]; then
+                fixed_time=$(echo "$fixed_time + ${timing_map[$photo_name]}" | bc)
+                ((count_fixed++))
+            fi
             printf "%-40s = \n" "$photo_name" >> input/init.txt
+            ((photo_count++))
         done
+        
+        # 檢查音樂檔案
+        local music_files=(input/music/*.mp3)
+        local music_duration=0
+        if [ ${#music_files[@]} -gt 0 ]; then
+            music_duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${music_files[0]}")
+            music_duration=${music_duration%.*}
+        fi
+        
+        # 計算時間分配
+        local remaining_photos=$((photo_count - count_fixed - 2))
+        local START_FIRST_SLIDE=10
+        local END_LAST_SLIDE=15
+        local remaining_time=$((music_duration - START_FIRST_SLIDE - END_LAST_SLIDE - ${fixed_time%.*}))
+        
+        local avg_time=1.5
+        if [ "$remaining_photos" -gt 0 ]; then
+            avg_time=$(echo "scale=2; $remaining_time / $remaining_photos" | bc)
+        fi
+        
+        # 輸出統計資訊（只輸出一次）
+        echo "📋 總相片數：$photo_count"
+        echo "🕒 背景音樂長度：${music_duration}s"
+        echo "📄 有設定時間的相片：$count_fixed 張，共 ${fixed_time}s"
+        echo "⏳ 剩餘平均分配每張：${avg_time}s"
         
         # 加入照片統計資訊
         echo "" >> input/init.txt
@@ -64,7 +129,7 @@ EOF
     
     echo -e "${GREEN}已建立輸入資料夾結構和範本檔案${NC}"
     echo -e "${YELLOW}請將照片放入 input/photos 目錄中${NC}"
-    echo -e "${YELLOW}請將背景音樂放入 input 目錄中（支援 .mp3 格式）${NC}"
+    echo -e "${YELLOW}請將背景音樂放入 input/music 目錄中（支援 .mp3 格式）${NC}"
     echo -e "${YELLOW}請編輯 input/init.txt 檔案以設定幻燈片文字${NC}"
     echo -e "${YELLOW}完成編輯後，請複製 init.txt 並改名，例如：${NC}"
     echo -e "${YELLOW}  cp input/init.txt input/class_2024.txt${NC}"
@@ -103,10 +168,11 @@ check_required_files() {
         has_error=1
     fi
     
-    # 檢查文字檔案（排除 init.txt）
+    # 檢查文字檔案（排除 init.txt 和 timing.txt）
     local text_files=()
     for file in input/*.txt; do
-        if [[ "$(basename "$file")" != "init.txt" ]]; then
+        local filename=$(basename "$file")
+        if [[ "$filename" != "init.txt" && "$filename" != "timing.txt" ]]; then
             text_files+=("$file")
         fi
     done
@@ -119,9 +185,9 @@ check_required_files() {
     fi
     
     # 檢查音樂檔案
-    local music_files=(input/*.mp3)
+    local music_files=(input/music/*.mp3)
     if [ ${#music_files[@]} -eq 0 ]; then
-        echo -e "${RED}錯誤：找不到音樂檔案，請在 input 目錄中放入 .mp3 檔案${NC}"
+        echo -e "${RED}錯誤：找不到音樂檔案，請在 input/music 目錄中放入 .mp3 檔案${NC}"
         has_error=1
     elif [ ${#music_files[@]} -gt 1 ]; then
         echo -e "${YELLOW}警告：找到多個音樂檔案，將使用 ${music_files[0]}${NC}"
@@ -143,7 +209,8 @@ generate_video() {
     # 取得文字檔案
     local text_file
     for file in input/*.txt; do
-        if [[ "$(basename "$file")" != "init.txt" ]]; then
+        local filename=$(basename "$file")
+        if [[ "$filename" != "init.txt" && "$filename" != "timing.txt" ]]; then
             text_file="$file"
             break
         fi
@@ -158,7 +225,7 @@ generate_video() {
     echo -e "${GREEN}使用文字檔案：${text_file}${NC}"
     
     # 取得音樂檔案
-    local music_file=$(ls input/*.mp3 | head -n 1)
+    local music_file=$(ls input/music/*.mp3 | head -n 1)
     local music_filename=$(basename "$music_file" .mp3)
     echo -e "${GREEN}使用音樂檔案：${music_file}${NC}"
     
@@ -194,33 +261,65 @@ generate_video() {
     done < "$text_file"
     
     echo -e "${GREEN}讀取到的文字數量：${#texts[@]}${NC}"
-    for i in "${!texts[@]}"; do
-        echo -e "${GREEN}文字 $((i+1)): ${texts[$i]}${NC}"
-    done
+    
+    # 讀取 timing.txt 的設定
+    declare -A timing_map
+    if [ -f "input/timing.txt" ]; then
+        while IFS='=' read -r filename duration; do
+            filename=$(echo "$filename" | xargs)
+            duration=$(echo "$duration" | xargs)
+            if [[ -n "$filename" && -n "$duration" ]]; then
+                timing_map["$filename"]=$duration
+            fi
+        done < "input/timing.txt"
+    fi
     
     # 計算每張照片的顯示時間
     local music_duration=$(ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "$music_file")
-    local first_duration=5  # 第一張照片顯示 5 秒
-    local last_duration=10   # 最後一張照片顯示 3 秒
-    local middle_duration=$(echo "scale=2; ($music_duration - $first_duration - $last_duration) / ($photo_count - 2)" | bc)
+    local default_first_duration=5  # 第一張照片預設顯示 5 秒
+    local default_last_duration=10   # 最後一張照片預設顯示 10 秒
+    
+    # 計算已設定時間的照片總時間
+    local fixed_time=0
+    local count_fixed=0
+    for duration in "${timing_map[@]}"; do
+        fixed_time=$(echo "$fixed_time + $duration" | bc)
+        ((count_fixed++))
+    done
+    
+    # 計算剩餘照片的平均時間
+    local remaining_photos=$((photo_count - count_fixed))  # 不再減去第一張和最後一張
+    local remaining_time=$(echo "scale=2; $music_duration - $fixed_time" | bc)
+    local middle_duration=$(echo "scale=2; $remaining_time / $remaining_photos" | bc)
     
     echo -e "${GREEN}音樂長度：${music_duration} 秒${NC}"
-    echo -e "${GREEN}第一張照片顯示時間：${first_duration} 秒${NC}"
-    echo -e "${GREEN}最後一張照片顯示時間：${last_duration} 秒${NC}"
+    echo -e "${GREEN}第一張照片預設時間：${default_first_duration} 秒${NC}"
+    echo -e "${GREEN}最後一張照片預設時間：${default_last_duration} 秒${NC}"
     echo -e "${GREEN}中間照片平均顯示時間：${middle_duration} 秒${NC}"
+    echo -e "${GREEN}已設定時間的照片：${count_fixed} 張，共 ${fixed_time} 秒${NC}"
+    
+    # 收集照片處理資訊
+    local photo_info=()
     
     # 為每張照片建立過渡效果
     local i=0
     for photo in output/processed_photos/*.jpg; do
         local output="$temp_dir/photo_$i.mp4"
+        local photo_name=$(basename "$photo")
         
         # 決定顯示時間
         local duration
-        if [ $i -eq 0 ]; then
-            duration=$first_duration
+        if [ -n "${timing_map[$photo_name]}" ]; then
+            # 如果有在 timing.txt 中設定時間，優先使用設定的時間
+            duration=${timing_map[$photo_name]}
+        elif [ $i -eq 0 ]; then
+            # 第一張照片，使用預設值
+            duration=$default_first_duration
         elif [ $i -eq $((photo_count-1)) ]; then
-            duration=$last_duration
+            # 最後一張照片，使用預設值
+            duration=$default_last_duration
         else
+            # 其他照片使用計算出的平均時間
             duration=$middle_duration
         fi
         
@@ -237,12 +336,11 @@ generate_video() {
             text="${texts[$i]}"
         fi
         
-        # 輸出照片資訊（簡化格式）
-        local photo_name=$(basename "$photo")
+        # 收集照片資訊
         if [ -n "$text" ]; then
-            echo -e "${GREEN}$((i+1))/$photo_count ${photo_name} ${duration}s ${text}${NC}"
+            photo_info+=("$((i+1))/$photo_count ${photo_name} ${duration}s ${text}")
         else
-            echo -e "${GREEN}$((i+1))/$photo_count ${photo_name} ${duration}s${NC}"
+            photo_info+=("$((i+1))/$photo_count ${photo_name} ${duration}s")
         fi
         
         # 使用 ffmpeg 建立帶有過渡效果和文字的影片片段
@@ -271,6 +369,12 @@ generate_video() {
         echo "file 'photo_$i.mp4'" >> "$concat_file"
         
         i=$((i+1))
+    done
+    
+    # 輸出所有照片處理資訊
+    echo -e "${GREEN}照片處理資訊：${NC}"
+    for info in "${photo_info[@]}"; do
+        echo -e "${GREEN}$info${NC}"
     done
     
     # 複製音樂檔案到臨時目錄
