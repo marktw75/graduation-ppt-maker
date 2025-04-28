@@ -30,6 +30,7 @@ usage() {
   echo "  ./imgtool.sh merge <img1> <img2> [...] [--output merged.jpg]"
   echo "  ./imgtool.sh blend <img1> <img2> [--output blended.jpg]"
   echo "  ./imgtool.sh addBottom <image> <height> - 在圖片底部添加指定高度的黑色區域"
+  echo "  ./imgtool.sh crop <image> <center_x> <center_y> <radius> - 依指定中心點與半徑裁出正方形圖片"
   echo "  ./imgtool.sh help - 顯示此幫助訊息"
   echo ""
   exit 1
@@ -216,6 +217,48 @@ elif [ "$cmd" = "addBottom" ]; then
   echo -e "${GREEN}原始尺寸：${width}x${original_height}${NC}"
   echo -e "${GREEN}新尺寸：${width}x${new_height}${NC}"
   echo -e "${GREEN}輸出檔案：${output}${NC}"
+
+elif [ "$cmd" = "crop" ]; then
+  img="$1"
+  center_x="$2"
+  center_y="$3"
+  radius="$4"
+  if [ -z "$img" ] || [ -z "$center_x" ] || [ -z "$center_y" ] || [ -z "$radius" ]; then
+    echo -e "${RED}錯誤：請提供圖片路徑、中心點 x、y 及半徑${NC}"
+    usage
+    exit 1
+  fi
+  if [ ! -f "$img" ]; then
+    echo -e "${RED}錯誤：找不到圖片檔案 '$img'${NC}"
+    exit 1
+  fi
+  if ! [[ "$center_x" =~ ^[0-9]+$ ]] || ! [[ "$center_y" =~ ^[0-9]+$ ]] || ! [[ "$radius" =~ ^[0-9]+$ ]]; then
+    echo -e "${RED}錯誤：中心點與半徑必須是正整數${NC}"
+    exit 1
+  fi
+
+  # 先自動校正方向
+  oriented_img=$(mktemp /tmp/oriented_XXXXXX.png)
+  convert "$img" -auto-orient "$oriented_img"
+
+  size=$((2 * radius))
+  x0=$((center_x - radius))
+  y0=$((center_y - radius))
+
+  # 防呆：不能超出邊界
+  img_width=$(identify -format "%w" "$oriented_img")
+  img_height=$(identify -format "%h" "$oriented_img")
+  if [ $x0 -lt 0 ]; then x0=0; fi
+  if [ $y0 -lt 0 ]; then y0=0; fi
+  if [ $((x0 + size)) -gt $img_width ]; then size=$((img_width - x0)); fi
+  if [ $((y0 + size)) -gt $img_height ]; then size=$((img_height - y0)); fi
+
+  output="output/$(basename "${img%.*}")_cropped.${img##*.}"
+  mkdir -p "$(dirname "$output")"
+  convert "$oriented_img" -crop "${size}x${size}+${x0}+${y0}" +repage "$output"
+  rm "$oriented_img"
+
+  echo -e "${GREEN}已裁切為 ${size}x${size}，輸出：$output${NC}"
 
 elif [ "$cmd" = "help" ]; then
   usage
