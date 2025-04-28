@@ -242,23 +242,25 @@ elif [ "$cmd" = "crop" ]; then
   convert "$img" -auto-orient "$oriented_img"
 
   size=$((2 * radius))
-  x0=$((center_x - radius))
-  y0=$((center_y - radius))
+  border=$((size / 20))
+  crop_size=$((size + 2 * border))
+  x0=$((center_x - radius - border))
+  y0=$((center_y - radius - border))
 
   # 防呆：不能超出邊界
   img_width=$(identify -format "%w" "$oriented_img")
   img_height=$(identify -format "%h" "$oriented_img")
   if [ $x0 -lt 0 ]; then x0=0; fi
   if [ $y0 -lt 0 ]; then y0=0; fi
-  if [ $((x0 + size)) -gt $img_width ]; then size=$((img_width - x0)); fi
-  if [ $((y0 + size)) -gt $img_height ]; then size=$((img_height - y0)); fi
+  if [ $((x0 + crop_size)) -gt $img_width ]; then crop_size=$((img_width - x0)); fi
+  if [ $((y0 + crop_size)) -gt $img_height ]; then crop_size=$((img_height - y0)); fi
 
   output="output/$(basename "${img%.*}")_cropped.${img##*.}"
   mkdir -p "$(dirname "$output")"
-  convert "$oriented_img" -crop "${size}x${size}+${x0}+${y0}" +repage "$output"
+  convert "$oriented_img" -crop "${crop_size}x${crop_size}+${x0}+${y0}" +repage -bordercolor white -border ${border} "$output"
   rm "$oriented_img"
 
-  echo -e "${GREEN}已裁切為 ${size}x${size}，輸出：$output${NC}"
+  echo -e "${GREEN}已裁切為 ${size}x${size}，加白框（${border}px），輸出：$output${NC}"
 
 elif [ "$cmd" = "help" ]; then
   usage
