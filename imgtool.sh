@@ -30,7 +30,7 @@ usage() {
   echo "  ./imgtool.sh merge <img1> <img2> [...] [--output merged.jpg]"
   echo "  ./imgtool.sh blend <img1> <img2> [--output blended.jpg]"
   echo "  ./imgtool.sh addBottom <image> <height> - 在圖片底部添加指定高度的黑色區域"
-  echo "  ./imgtool.sh crop <image> <center_x> <center_y> <radius> - 依指定中心點與半徑裁出正方形圖片"
+  echo "  ./imgtool.sh crop <image> <center_x> <center_y> <radius> [--border <寬度>] - 依指定中心點與半徑裁出正方形圖片，可選擇是否加上白框及其寬度(像素)"
   echo "  ./imgtool.sh help - 顯示此幫助訊息"
   echo ""
   exit 1
@@ -223,6 +223,23 @@ elif [ "$cmd" = "crop" ]; then
   center_x="$2"
   center_y="$3"
   radius="$4"
+  border=0
+  shift 4
+
+  # 檢查是否有 --border 參數
+  while [[ "$1" ]]; do
+    if [[ "$1" == "--border" ]]; then
+      shift
+      if [[ "$1" =~ ^[0-9]+$ ]]; then
+        border="$1"
+      else
+        echo -e "${RED}錯誤：白框寬度必須是正整數${NC}"
+        exit 1
+      fi
+    fi
+    shift
+  done
+
   if [ -z "$img" ] || [ -z "$center_x" ] || [ -z "$center_y" ] || [ -z "$radius" ]; then
     echo -e "${RED}錯誤：請提供圖片路徑、中心點 x、y 及半徑${NC}"
     usage
@@ -242,7 +259,6 @@ elif [ "$cmd" = "crop" ]; then
   convert "$img" -auto-orient "$oriented_img"
 
   size=$((2 * radius))
-  border=$((size / 20))
   crop_size=$((size + 2 * border))
   x0=$((center_x - radius - border))
   y0=$((center_y - radius - border))
