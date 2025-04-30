@@ -3,6 +3,23 @@
 # imgtool.sh - 多功能圖片工具
 # 支援 info / resize / merge / blend（新：blend 兩張圖片並做 50px 淡化融合）
 
+# 顏色定義
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# 檢查必要的命令
+for cmd in convert; do
+    if ! command -v $cmd &> /dev/null; then
+        echo -e "${RED}錯誤：找不到 $cmd 命令${NC}"
+        echo -e "${YELLOW}請安裝必要的套件：${NC}"
+        echo -e "${YELLOW}  sudo apt-get update${NC}"
+        echo -e "${YELLOW}  sudo apt-get install -y imagemagick${NC}"
+        exit 1
+    fi
+done
+
 usage() {
   echo ""
   echo "🖼️ imgtool.sh - 多功能圖片處理工具"
@@ -12,6 +29,9 @@ usage() {
   echo "  ./imgtool.sh resize <image> <maxdim> [output]"
   echo "  ./imgtool.sh merge <img1> <img2> [...] [--output merged.jpg]"
   echo "  ./imgtool.sh blend <img1> <img2> [--output blended.jpg]"
+  echo "  ./imgtool.sh addBottom <image> <height> - 在圖片底部添加指定高度的黑色區域"
+  echo "  ./imgtool.sh crop <image> <center_x> <center_y> <radius> [--border <寬度>] - 依指定中心點與半徑裁出正方形圖片，可選擇是否加上白框及其寬度(像素)"
+  echo "  ./imgtool.sh help - 顯示此幫助訊息"
   echo ""
   exit 1
 }
@@ -33,17 +53,26 @@ if [ "$cmd" = "info" ]; then
 
 elif [ "$cmd" = "resize" ]; then
   img="$1"
-  maxdim="$2"
-  output="$3"
-  if [ ! -f "$img" ]; then echo "❌ 找不到檔案：$img"; exit 1; fi
-  if [ -z "$output" ]; then
-    ext="${img##*.}"
-    base="${img%.*}"
-    output="output/${base}_resized.${ext}"
+  height="$2"
+  if [ -z "$img" ] || [ -z "$height" ]; then
+    echo -e "${RED}錯誤：請提供圖片路徑和目標高度${NC}"
+    usage
+    exit 1
   fi
-  convert "$img" -resize "${maxdim}x${maxdim}" -quality 90 "$output"
-  res=$(identify -format "%wx%h" "$output")
-  echo "✅ 已縮放為 $res，輸出：$output"
+  if [ ! -f "$img" ]; then
+    echo -e "${RED}錯誤：找不到圖片檔案 '$img'${NC}"
+    exit 1
+  fi
+  if ! [[ "$height" =~ ^[0-9]+$ ]]; then
+    echo -e "${RED}錯誤：高度必須是正整數${NC}"
+    exit 1
+  fi
+  output="output/$(basename "${img%.*}")_resized.${img##*.}"
+  mkdir -p "$(dirname "$output")"
+  convert "$img" -auto-orient -resize "x$height" "$output"
+  width=$(identify -format "%w" "$output" 2>/dev/null)
+  real_height=$(identify -format "%h" "$output" 2>/dev/null)
+  echo -e "✅ 已縮放為 ${width}x${real_height}，輸出：$output"
 
 elif [ "$cmd" = "merge" ]; then
   imgs=()
@@ -149,6 +178,108 @@ elif [ "$cmd" = "blend" ]; then
 
   rm -rf "$tmp_dir"
   echo "✅ 已完成融合並輸出到 $out"
+
+elif [ "$cmd" = "addBottom" ]; then
+  img="$1"
+  height="$2"
+  if [ -z "$img" ] || [ -z "$height" ]; then
+    echo -e "${RED}錯誤：請提供圖片路徑和要添加的高度${NC}"
+    usage
+    exit 1
+  fi
+  if [ ! -f "$img" ]; then
+    echo -e "${RED}錯誤：找不到圖片檔案 '$img'${NC}"
+    exit 1
+  fi
+  if ! [[ "$height" =~ ^[0-9]+$ ]]; then
+    echo -e "${RED}錯誤：高度必須是正整數${NC}"
+    exit 1
+  fi
+
+  # 先自動校正方向
+  oriented_img=$(mktemp /tmp/oriented_XXXXXX.png)
+  convert "$img" -auto-orient "$oriented_img"
+
+  width=$(identify -format "%w" "$oriented_img")
+  original_height=$(identify -format "%h" "$oriented_img")
+  new_height=$((original_height + height))
+  output="${img%.*}_extended.${img##*.}"
+
+  # 產生一張全黑的底部圖
+  black_img=$(mktemp /tmp/black_bottom_XXXXXX.png)
+  convert -size "${width}x${height}" xc:black "$black_img"
+
+  # 上下疊加
+  convert "$oriented_img" "$black_img" -append "$output"
+  rm "$black_img" "$oriented_img"
+
+  echo -e "${GREEN}處理完成：${NC}"
+  echo -e "${GREEN}原始尺寸：${width}x${original_height}${NC}"
+  echo -e "${GREEN}新尺寸：${width}x${new_height}${NC}"
+  echo -e "${GREEN}輸出檔案：${output}${NC}"
+
+elif [ "$cmd" = "crop" ]; then
+  img="$1"
+  center_x="$2"
+  center_y="$3"
+  radius="$4"
+  border=0
+  shift 4
+
+  # 檢查是否有 --border 參數
+  while [[ "$1" ]]; do
+    if [[ "$1" == "--border" ]]; then
+      shift
+      if [[ "$1" =~ ^[0-9]+$ ]]; then
+        border="$1"
+      else
+        echo -e "${RED}錯誤：白框寬度必須是正整數${NC}"
+        exit 1
+      fi
+    fi
+    shift
+  done
+
+  if [ -z "$img" ] || [ -z "$center_x" ] || [ -z "$center_y" ] || [ -z "$radius" ]; then
+    echo -e "${RED}錯誤：請提供圖片路徑、中心點 x、y 及半徑${NC}"
+    usage
+    exit 1
+  fi
+  if [ ! -f "$img" ]; then
+    echo -e "${RED}錯誤：找不到圖片檔案 '$img'${NC}"
+    exit 1
+  fi
+  if ! [[ "$center_x" =~ ^[0-9]+$ ]] || ! [[ "$center_y" =~ ^[0-9]+$ ]] || ! [[ "$radius" =~ ^[0-9]+$ ]]; then
+    echo -e "${RED}錯誤：中心點與半徑必須是正整數${NC}"
+    exit 1
+  fi
+
+  # 先自動校正方向
+  oriented_img=$(mktemp /tmp/oriented_XXXXXX.png)
+  convert "$img" -auto-orient "$oriented_img"
+
+  size=$((2 * radius))
+  crop_size=$((size + 2 * border))
+  x0=$((center_x - radius - border))
+  y0=$((center_y - radius - border))
+
+  # 防呆：不能超出邊界
+  img_width=$(identify -format "%w" "$oriented_img")
+  img_height=$(identify -format "%h" "$oriented_img")
+  if [ $x0 -lt 0 ]; then x0=0; fi
+  if [ $y0 -lt 0 ]; then y0=0; fi
+  if [ $((x0 + crop_size)) -gt $img_width ]; then crop_size=$((img_width - x0)); fi
+  if [ $((y0 + crop_size)) -gt $img_height ]; then crop_size=$((img_height - y0)); fi
+
+  output="output/$(basename "${img%.*}")_cropped.${img##*.}"
+  mkdir -p "$(dirname "$output")"
+  convert "$oriented_img" -crop "${crop_size}x${crop_size}+${x0}+${y0}" +repage -bordercolor white -border ${border} "$output"
+  rm "$oriented_img"
+
+  echo -e "${GREEN}已裁切為 ${size}x${size}，加白框（${border}px），輸出：$output${NC}"
+
+elif [ "$cmd" = "help" ]; then
+  usage
 else
   usage
 fi
