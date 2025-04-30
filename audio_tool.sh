@@ -4,7 +4,6 @@
 
 mkdir -p output
 timestamp=$(date +"%Y%m%d%H%M")
-output_file="output/audio_${timestamp}.mp3"
 
 # 顯示幫助訊息
 show_help() {
@@ -70,6 +69,60 @@ add_silence_end() {
     echo "已生成包含靜音的音頻: $output_file"
 }
 
+# 合併音頻的函數
+concat_audio() {
+    local input_file1="$1"
+    local input_file2="$2"
+    local output_file="output/concat_$(basename "$input_file1" .mp3)_$(basename "$input_file2" .mp3).mp3"
+
+    # 使用 ffmpeg 合併音頻
+    ffmpeg -i "concat:$input_file1|$input_file2" -acodec copy "$output_file"
+    if [ $? -ne 0 ]; then
+        echo "❗ 合併音頻失敗"
+        exit 1
+    fi
+
+    echo "已合併音頻: $output_file"
+}
+
+# 重複合唱的函數
+repeat_chorus_smooth() {
+    local input_file="$1"
+    local start="$2"
+    local end="$3"
+    local output_file="output/repeat_chorus_$(basename "$input_file")"
+
+    # 使用 ffmpeg 重複合唱部分
+    ffmpeg -i "$input_file" -ss "$start" -to "$end" -c copy "$output_file"
+    if [ $? -ne 0 ]; then
+        echo "❗ 重複合唱失敗"
+        exit 1
+    fi
+
+    echo "已重複合唱: $output_file"
+}
+
+# 剪裁範圍的函數
+crop_range() {
+    local input_file="$1"
+    local start="$2"
+    local end="$3"
+    local output_file="output/crop_$(basename "$input_file")"
+
+    if [ -z "$end" ]; then
+        ffmpeg -i "$input_file" -ss "$start" -c copy "$output_file"
+    else
+        ffmpeg -i "$input_file" -ss "$start" -to "$end" -c copy "$output_file"
+    fi
+
+    if [ $? -ne 0 ]; then
+        echo "❗ 剪裁範圍失敗"
+        exit 1
+    fi
+
+    echo "已剪裁範圍: $output_file"
+}
+
 # 主程式
 case "$1" in
     cut)
@@ -83,6 +136,18 @@ case "$1" in
     silent_end)
         shift
         add_silence_end "$@"
+        ;;
+    concat)
+        shift
+        concat_audio "$@"
+        ;;
+    repeat-chorus-smooth)
+        shift
+        repeat_chorus_smooth "$@"
+        ;;
+    crop-range)
+        shift
+        crop_range "$@"
         ;;
     help)
         show_help
