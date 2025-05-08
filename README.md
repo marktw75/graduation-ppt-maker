@@ -1,78 +1,101 @@
-# 畢業紀念冊幻燈片製作工具
+# 圖片處理工具集
 
-這是一個用於製作畢業紀念冊幻燈片的工具，可以將照片、文字和音樂組合成一個精美的影片。
+這是一系列用於圖片處理的命令列工具，提供多種圖片處理功能。
 
-## 功能特點
+## 安裝需求
 
-- 自動處理照片，調整大小和格式，預設是1920x1080
-- 支援為每張照片添加文字說明
-- 自動計算照片顯示時間，配合音樂長度
-- 第一張照片顯示 5 秒，最後一張顯示 3 秒，中間照片平均分配剩餘時間
-- 支援自定義文字檔案和音樂檔案
-- 輸出影片名稱由文字檔案和音樂檔案名稱組合而成
-
-## 系統需求
-
-- Linux 作業系統
-- Python 3
-- ffmpeg
 - ImageMagick
+- Python 3
+- OpenCV (用於人臉偵測)
 
-## 安裝依賴
-
+安裝必要套件：
 ```bash
 sudo apt-get update
-sudo apt-get install -y ffmpeg imagemagick python3-pip
-pip3 install Pillow
+sudo apt-get install -y imagemagick opencv-data
+pip install opencv-python
 ```
 
-## 使用說明
+## 工具說明
 
-1. 初始化專案：
+### 1. 人臉偵測與裁切 (face-extract)
+
+從大圖中找出人臉並裁切成小圖。
+
 ```bash
-./graduation-ppt-maker.sh init
-```
-這會建立必要的目錄結構和範本檔案。
-
-2. 準備檔案：
-- 將照片放入 `input/photos` 目錄
-- 將背景音樂（music.mp3）放入 `input` 目錄，檔名會是輸出影片檔的一部份
-- `input/init.txt` 檔案會自動産生，列出photos下的所有照片檔名
-- 複製 `init.txt` 並改名，例如：`cp input/init.txt input/class_2024.txt`。
-- 你最後輸出的影片檔就會是 class_2024_music.mp4
-
-- 請將文字說明加入剛才複製的檔案中，例如：class_2024.txt，程式不會動到這個檔案中的文字。
-- 編輯你的文字檔，例如：class_2024.txt，每一行的順序及名稱這對應到你的相片，例如
-```txt
-2022-10-01 10.09.28.jpg                   = 
-2022-10-29 09.26.43.jpg                   = 
-```
-- 在後方加上你的文字說明，例如：
-```
-2022-10-01 10.09.28.jpg                   = 第二次團集會
-2022-10-29 09.26.43.jpg                   = 第三次團集會，開始融入團隊
+./imgtool.sh face-extract <輸入圖片> [邊框比例]
 ```
 
-3. 處理照片：
+參數說明：
+- `<輸入圖片>`：要處理的圖片檔案
+- `[邊框比例]`：可選，預設為 0.3（臉部區域的 30%）
+
+範例：
 ```bash
-./graduation-ppt-maker.sh process-photos
+./imgtool.sh face-extract photo.jpg
+./imgtool.sh face-extract photo.jpg 0.5  # 使用 50% 的邊框
 ```
-這會將你所有放在 `input/photos` 目錄下的jpg檔轉成1920x1080，並存到 `output/processed_photos`下。
-- 你可以到 `output/processed_photos` 查看相片，這就是最後影片輸出的結果。
-- 新增或刪除`input/photos` 目錄下的檔案後，記得先刪除 `output/processed_photos` 再重新執行  process-photos，以便重新處理産生正確的中繼檔給影片用。
 
+### 2. 圓形裁切 (circle)
 
-4. 產生影片：
+將圖片裁切成圓形。
+
 ```bash
-./graduation-ppt-maker.sh generate-video
+./imgtool.sh circle <輸入圖片>
 ```
 
-5. 更新影片小技巧
-- 直接新增相片到 `input/photos`中，或刪除不想放到影片中的相片。
-- 重跑init會更新相片順序及檔名到init.txt中
-- 利用 `merge_text.sh` 工具把你寫好的說明文字複製到init.txt中。
-- 再利用更新後的init.txt來更新你的說明文件。
+範例：
+```bash
+./imgtool.sh circle photo.jpg
+```
 
-## 授權
+### 3. 區域變黑 (black)
 
-MIT License
+將指定區域變為黑色。
+
+```bash
+./imgtool.sh black <輸入圖片> <x> <y> <寬度> <高度>
+```
+
+參數說明：
+- `<x>`：起始 x 座標
+- `<y>`：起始 y 座標
+- `<寬度>`：要變黑的區域寬度
+- `<高度>`：要變黑的區域高度
+
+範例：
+```bash
+./imgtool.sh black photo.jpg 100 100 200 200
+```
+
+### 4. 中心點貼圖 (paste)
+
+將小圖以中心點對準大圖的指定座標進行貼圖。
+
+```bash
+./imgtool.sh paste <大圖> <小圖> <x座標> <y座標> [比例]
+```
+
+參數說明：
+- `<大圖>`：背景圖片
+- `<小圖>`：要貼上的圖片
+- `<x座標>`：目標 x 座標
+- `<y座標>`：目標 y 座標
+- `[比例]`：可選，小圖相對於大圖的比例（預設 0.25）
+
+範例：
+```bash
+./imgtool.sh paste background.jpg small.jpg 800 400
+./imgtool.sh paste background.jpg small.jpg 800 400 0.3  # 使用 30% 的比例
+```
+
+## 注意事項
+
+1. 所有工具都會保留原始圖片，並產生新的輸出檔案
+2. 輸出檔案會自動加上對應的後綴（例如：`_face`、`_circle` 等）
+3. 支援的圖片格式：JPG、PNG、GIF 等常見格式
+
+## 錯誤處理
+
+- 如果找不到必要的命令或套件，工具會提示安裝方法
+- 如果處理過程中發生錯誤，會顯示錯誤訊息並退出
+- 所有工具都會檢查輸入參數的有效性
