@@ -349,12 +349,12 @@ generate_video() {
             # 取得照片寬度
             width=$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of default=noprint_wrappers=1:nokey=1 "$photo")
             # 根據寬度計算字體大小（1920寬度用48，其他按比例縮放）
-            fontsize=$((width * 48 / 1920))
+            fontsize=$((width * 60 / 1920))
             # 確保字體大小在合理範圍內
-            if [ $fontsize -lt 24 ]; then
-                fontsize=24
-            elif [ $fontsize -gt 72 ]; then
-                fontsize=72
+            if [ $fontsize -lt 48 ]; then
+                fontsize=48
+            elif [ $fontsize -gt 96 ]; then
+                fontsize=96
             fi
             
             ffmpeg -loop 1 -i "$photo" \
