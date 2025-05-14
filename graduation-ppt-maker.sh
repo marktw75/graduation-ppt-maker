@@ -254,7 +254,8 @@ generate_video() {
         fi
         # 處理照片列表行（包含等號的行）
         if [[ "$line" =~ = ]]; then
-            # 提取等號後面的文字
+            # 刪除 # 之後的內容
+            line=$(echo "$line" | sed 's/#.*//')
             text=$(echo "$line" | sed -E 's/^[^=]*=[[:space:]]*(.*)$/\1/')
             texts+=("$text")
         fi
